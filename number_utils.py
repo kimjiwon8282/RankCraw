@@ -3,8 +3,8 @@ def transNumber(s:str) -> int:
     s = s.strip().replace(",", "")  # 공백·콤마 제거
 
     for unit, mul in unit_map.items():
-        if s.endswith(unit):
-            try:
+        if s.endswith(unit): #문자열이 unit으로 끝나는 지 확인
+            try: 
                 num = float(s[:-1])
             except ValueError:
                 return 0

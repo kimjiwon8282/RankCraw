@@ -26,7 +26,7 @@ csv_path = os.path.join(UPLOAD_DIR, 'data2.csv')
 # 인코딩은 윈도우 엑셀 호환을 위해 CP949 사용
 with open(csv_path, 'w', encoding='cp949', newline='') as f:
     csvWriter = csv.writer(f)
-    csvWriter.writerow(['rank','name','price','rating','rating_count','purchase_count','wish_count','link'])
+    csvWriter.writerow(['rank','name','price','rating','rating_count','purchase_count','wish_count','review_count','link'])
     
     # ─── 3) Selenium 드라이버 준비 ────────────────────────────────────────────
     service = Service(ChromeDriverManager().install())
@@ -133,8 +133,21 @@ with open(csv_path, 'w', encoding='cp949', newline='') as f:
                 except NoSuchElementException:
                     wish_count = "0"
 
+                # 5) 리뷰수 (텍스트 “리뷰”가가 포함된 span 찾기)
+                try:
+                    review_span = info_div.find_element(
+                        By.XPATH,
+                        ".//span[contains(normalize-space(), '리뷰')]"
+                    )
+                    review_count_temp = review_span.find_element(
+                        By.TAG_NAME, "em"
+                    ).text.replace(",", "")
+                    review_count = transNumber(review_count_temp)
+                except NoSuchElementException:
+                    review_count = "0"
+
             rank+=1
-            csvWriter.writerow([rank,name,price,rating,rating_count,purchase_count,wish_count,link])
+            csvWriter.writerow([rank,name,price,rating,rating_count,purchase_count,wish_count,review_count,link])
 
 print(f"[DONE] CSV 저장 경로: {csv_path}")
 time.sleep(3600)
