@@ -2,6 +2,7 @@ import os
 import time
 import csv
 from selenium import webdriver
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -10,6 +11,7 @@ from selenium.webdriver.common.keys import Keys
 #  크롬 드라이버 자동 업데이트를 위한 webdriver_manager 사용
 from webdriver_manager.chrome import ChromeDriverManager
 import urllib.parse  # URL 인코딩에 사용
+from number_utils import transNumber
 
 # ─── 1) uploads 디렉터리 경로 설정 ─────────────────────────────────────────────
 # 이 스크립트가 있는 폴더 기준으로 uploads 폴더를 생성
@@ -24,6 +26,7 @@ csv_path = os.path.join(UPLOAD_DIR, 'data2.csv')
 # 인코딩은 윈도우 엑셀 호환을 위해 CP949 사용
 with open(csv_path, 'w', encoding='cp949', newline='') as f:
     csvWriter = csv.writer(f)
+    csvWriter.writerow(['rank','name','price','rating','rating_count','purchase_count','wish_count','link'])
     
     # ─── 3) Selenium 드라이버 준비 ────────────────────────────────────────────
     service = Service(ChromeDriverManager().install())
@@ -32,6 +35,7 @@ with open(csv_path, 'w', encoding='cp949', newline='') as f:
     # 검색어 및 URL 인코딩
     query = "쌈채소"
     encoded_query = urllib.parse.quote(query)
+    rank = 0
     
     # ─── 4) 크롤링 루프 ────────────────────────────────────────────────────────
     for page in range(1, 6):
@@ -77,14 +81,61 @@ with open(csv_path, 'w', encoding='cp949', newline='') as f:
             except:
                 link = "링크없음"
             try:
-                rank_value = item.find_element(
+                info_div = item.find_element(
                     By.CSS_SELECTOR,
-                    "a.productExpandSub_link_detail__U_wyd"
-                ).get_attribute("data-shp-contents-rank")
-            except:
-                rank_value = "랭크 없음."
-            
-            csvWriter.writerow([rank_value, name, price, link])
+                    "div.product_info_count__J6ElA"
+                )
+            except NoSuchElementException:
+                # info_div 자체가 없으면 모두 0
+                rating = "0.0"
+                rating_count = "0"
+                purchase_count = "0"
+                wish_count = "0"
+            else:
+            # 2) 평점 & 평점수
+                try:
+                    rating = info_div.find_element(
+                        By.CSS_SELECTOR,
+                        "span.product_grade__eU8gY strong"
+                    ).text
+                    rating_count_temp = info_div.find_element(
+                        By.CSS_SELECTOR,
+                        "span.product_grade__eU8gY em"
+                    ).text.replace(",", "")
+                    rating_count = transNumber(rating_count_temp)
+                except NoSuchElementException:
+                    rating = "0.0"
+                    rating_count = "0"
+
+                # 3) 구매수 (텍스트 “구매”이 포함된 span 찾기)
+                try:
+                    purchase_span = info_div.find_element(
+                        By.XPATH,
+                        ".//span[contains(normalize-space(), '구매')]"
+                    )
+                    purchase_count_temp = purchase_span.find_element(
+                        By.TAG_NAME, "em"
+                    ).text.replace(",", "")
+                    purchase_count = transNumber(purchase_count_temp)
+                except NoSuchElementException:
+                    purchase_count = "0"
+
+                # 4) 찜수 (텍스트 “찜”이 포함된 span 찾기)
+                try:
+                    wish_span = info_div.find_element(
+                        By.XPATH,
+                        ".//span[contains(normalize-space(), '찜')]"
+                    )
+                    wish_count_temp = wish_span.find_element(
+                        By.TAG_NAME, "em"
+                    ).text.replace(",", "")
+                    wish_count = transNumber(wish_count_temp)
+                except NoSuchElementException:
+                    wish_count = "0"
+
+            rank+=1
+            csvWriter.writerow([rank,name,price,rating,rating_count,purchase_count,wish_count,link])
 
 print(f"[DONE] CSV 저장 경로: {csv_path}")
+time.sleep(3600)
 
