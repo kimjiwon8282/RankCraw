@@ -33,16 +33,26 @@ def get_db():
     return _db
 
 def ping():
-    """
-    연결 확인용 ping
-    """
     try:
         _client.admin.command("ping")
-        print("Ping 성공:MongoDB 연결 완료")
+        print("✅ Ping 성공: MongoDB 연결 완료!")
     except Exception as e:
-        print("ping fail:",e)
+        print("❌ Ping 실패:", e)
+        raise
 
-# 파일 맨 아래에 추가
-if __name__ == "__main__":
-    ping()
+def insert_documents(docs: list, collection: str = "products") -> list:
+    """
+    Args:
+      docs: 저장할 문서(딕셔너리)의 리스트
+      collection: 컬렉션 이름 (기본: "products")
+    Returns:
+      삽입된 문서들의 ObjectId 리스트
+    """
+    if not docs:
+        return []
+    col = _db[collection]
+    result = col.insert_many(docs)
+    return result.inserted_ids
 
+#모듈이 임호트 될 때 곧바로 ping() 실행
+ping()
