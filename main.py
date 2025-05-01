@@ -150,5 +150,4 @@ with open(csv_path, 'w', encoding='cp949', newline='') as f:
             csvWriter.writerow([rank,name,price,rating,rating_count,purchase_count,wish_count,review_count,link])
 
 print(f"[DONE] CSV 저장 경로: {csv_path}")
-time.sleep(3600)
 
