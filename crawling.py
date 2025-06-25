@@ -1,181 +1,112 @@
-import os
 import time
-import csv
+import urllib.parse
+import random
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.keys import Keys
-#  크롬 드라이버 자동 업데이트를 위한 webdriver_manager 사용
 from webdriver_manager.chrome import ChromeDriverManager
-import urllib.parse  # URL 인코딩에 사용
-from number_utils import transNumber
 from db_utils import insert_documents
 from datetime import datetime
 
-def crawl():
-    # ─── 1) uploads 디렉터리 경로 설정 ─────────────────────────────────────────────
-    # 이 스크립트가 있는 폴더 기준으로 uploads 폴더를 생성
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+def crawl(query: str = "쌈채소", scroll_times: int = 7):
+    """
+    네이버 쇼핑 통합검색 페이지에서 광고 상품을 제외하고, 주어진 횟수만큼 스크롤 후
+    비광고 상품 랭킹과 주요 정보를 수집하여 MongoDB에 저장합니다.
+    Args:
+      query: 검색어
+      scroll_times: 스크롤 반복 횟수
+    """
+    # ChromeDriver 초기화
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service)
 
-    # CSV 파일 경로
-    csv_path = os.path.join(UPLOAD_DIR, 'data2.csv')
+    # 검색 페이지 접속
+    encoded_query = urllib.parse.quote(query)
+    url = f"https://search.shopping.naver.com/ns/search?query={encoded_query}"
+    print(f"[INFO] 접속 URL: {url}")
+    driver.get(url)
 
-    # ─── 2) CSV 파일 열기 ─────────────────────────────────────────────────────────
-    # 인코딩은 윈도우 엑셀 호환을 위해 CP949 사용
-    with open(csv_path, 'w', encoding='cp949', newline='') as f:
-        csvWriter = csv.writer(f)
-        csvWriter.writerow(['rank','name','price','rating','rating_count','purchase_count','wish_count','review_count','link'])
-        
-        # ─── 3) Selenium 드라이버 준비 ────────────────────────────────────────────
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service)
-        
-        # 검색어 및 URL 인코딩
-        query = "쌈채소"
-        encoded_query = urllib.parse.quote(query)
-        rank = 0
+    # 지정 횟수만큼 스크롤
+    for i in range(scroll_times):
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(1.0)
+        print(f"[INFO] 스크롤 {i+1}/{scroll_times}")
 
-        docs = []
-        # ─── 4) 크롤링 루프 ────────────────────────────────────────────────────────
-        for page in range(1, 6):
-            url = (
-                f"https://msearch.shopping.naver.com/search/all?"
-                f"adQuery={encoded_query}&origQuery={encoded_query}"
-                f"&pagingIndex={page}&pagingSize=40&productSet=total"
-                f"&query={encoded_query}&sort=rel&viewType=list"
-            )
-            print(f"[INFO] {page} 페이지 접속: {url}")
-            driver.get(url)
-            time.sleep(0.3)
-            
-            # 동적 스크롤
-            before_h = driver.execute_script("return window.scrollY")
-            while True:
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(0.5)
-                after_h = driver.execute_script("return window.scrollY")
-                if after_h == before_h:
-                    break
-                before_h = after_h
-            
-            # 상품 정보 추출
-            items = driver.find_elements(By.CSS_SELECTOR, ".product_list_item__blfKk")
-            print(f"[INFO] {len(items)} 개의 상품 정보 발견")
-            
-            for item in items:
-                try:
-                    name = item.find_element(By.CSS_SELECTOR, ".product_info_tit__UOCqq").text
-                except:
-                    name = "이름 없음"
-                try:
-                    price_text = item.find_element(By.CSS_SELECTOR, ".product_num__dWkfq").text
-                    price = int(price_text.replace(",", "").replace("원", "").strip())
-                except:
-                    price = -1
-                try:
-                    link = item.find_element(
-                        By.CSS_SELECTOR,
-                        "a.product_btn_link__AhZaM._nlog_click.linkAnchor"
-                    ).get_attribute("href")
-                except:
-                    link = "링크없음"
-                try:
-                    info_div = item.find_element(
-                        By.CSS_SELECTOR,
-                        "div.product_info_count__J6ElA"
-                    )
-                except NoSuchElementException:
-                    # info_div 자체가 없으면 모두 0
-                    rating = "0.0"
-                    rating_count = "0"
-                    purchase_count = "0"
-                    wish_count = "0"
-                else:
-                # 2) 평점 & 평점수
-                    try:
-                        rating = info_div.find_element(
-                            By.CSS_SELECTOR,
-                            "span.product_grade__eU8gY strong"
-                        ).text
-                        rating_count_temp = info_div.find_element(
-                            By.CSS_SELECTOR,
-                            "span.product_grade__eU8gY em"
-                        ).text.replace(",", "")
-                        rating_count = transNumber(rating_count_temp)
-                    except NoSuchElementException:
-                        rating = "0.0"
-                        rating_count = "0"
+    # 상품 요소 수집
+    items = driver.find_elements(By.CSS_SELECTOR, "li.compositeCardContainer_composite_card_container__jr8cb")
+    print(f"[INFO] 총 {len(items)}개의 상품 요소 발견")
 
-                    # 3) 구매수 (텍스트 “구매”이 포함된 span 찾기)
-                    try:
-                        purchase_span = info_div.find_element(
-                            By.XPATH,
-                            ".//span[contains(normalize-space(), '구매')]"
-                        )
-                        purchase_count_temp = purchase_span.find_element(
-                            By.TAG_NAME, "em"
-                        ).text.replace(",", "")
-                        purchase_count = transNumber(purchase_count_temp)
-                    except NoSuchElementException:
-                        purchase_count = "0"
-
-                    # 4) 찜수 (텍스트 “찜”이 포함된 span 찾기)
-                    try:
-                        wish_span = info_div.find_element(
-                            By.XPATH,
-                            ".//span[contains(normalize-space(), '찜')]"
-                        )
-                        wish_count_temp = wish_span.find_element(
-                            By.TAG_NAME, "em"
-                        ).text.replace(",", "")
-                        wish_count = transNumber(wish_count_temp)
-                    except NoSuchElementException:
-                        wish_count = "0"
-
-                    # 5) 리뷰수 (텍스트 “리뷰”가가 포함된 span 찾기)
-                    try:
-                        review_span = info_div.find_element(
-                            By.XPATH,
-                            ".//span[contains(normalize-space(), '리뷰')]"
-                        )
-                        review_count_temp = review_span.find_element(
-                            By.TAG_NAME, "em"
-                        ).text.replace(",", "")
-                        review_count = transNumber(review_count_temp)
-                    except NoSuchElementException:
-                        review_count = "0"
-
-                rank+=1
-                csvWriter.writerow([rank,name,price,rating,rating_count,purchase_count,wish_count,review_count,link])
-                
-                # 2) MongoDB용 문서 추가
-                docs.append({
-                    "keyword":query,
-                    "ranking":rank,
-                    "name":name,
-                    "price":price,
-                    "metrics": {
-                        "rating": float(rating),
-                        "rating_count": rating_count,
-                        "purchase_count": purchase_count,
-                        "wish_count": wish_count,
-                        "review_count": review_count
-                    },
-                    "link":link,
-                    "crawled_at":datetime.utcnow()
-                })
-
-        if docs:
+    docs = []
+    non_ad_rank = 0
+    for item in items:
+        try:
+            # 광고 상품 제외
             try:
-                inserted_ids = insert_documents(docs,collection="products")
-                print(f"[DB] 저장된 문서 수: {len(inserted_ids)}")
-            except Exception as e:
-                print("[DB ERROR]", e)
-                
-    print(f"[DONE] CSV 저장 경로: {csv_path}")
+                item.find_element(By.CSS_SELECTOR, ".advertisementTag_advertisement_tag__yIvim")
+                continue
+            except NoSuchElementException:
+                pass
 
+            non_ad_rank += 1
+
+            # 가게명
+            try:
+                store = item.find_element(By.CSS_SELECTOR, ".productCardMallLink_mall_name__5oWPw").text
+            except NoSuchElementException:
+                store = ""
+
+            # 상품명
+            try:
+                name = item.find_element(By.CSS_SELECTOR, ".productCardTitle_product_card_title__eQupA").text
+            except NoSuchElementException:
+                name = ""
+
+            # 가격
+            try:
+                price_text = item.find_element(By.CSS_SELECTOR, ".priceTag_number__1QW0R").text
+                price = int(price_text.replace(",", "").strip())
+            except:
+                price = 0
+
+            # 평점
+            try:
+                rating_text = item.find_element(By.CSS_SELECTOR, ".productCardReview_star__7iHNO").text
+                rating = float(rating_text)
+            except:
+                rating = 0.0
+
+            # 리뷰 수
+            try:
+                review_text = item.find_element(
+                    By.CSS_SELECTOR,
+                    "div.productCardReview_with_review_text__KreLb > span:nth-of-type(2)"
+                ).text
+                review = int(''.join(filter(str.isdigit, review_text)))
+            except:
+                review = 0
+
+            docs.append({
+                "keyword": query,
+                "ranking": non_ad_rank,
+                "store": store,
+                "name": name,
+                "price": price,
+                "rating": rating,
+                "review_count": review,
+                "crawled_at": datetime.utcnow()
+            })
+        except StaleElementReferenceException:
+            print("[WARN] StaleElementReferenceException 발생, 항목 스킵")
+            continue
+
+    # 브라우저 종료
+    input("크롤링 완료. 브라우저를 닫으려면 엔터를 누르세요...")
+    driver.quit()
+
+    # MongoDB 저장
+    if docs:
+        ids = insert_documents(docs, collection="products")
+        print(f"[DB] 저장된 문서 수: {len(ids)}")
+
+    print("[DONE] 크롤링 완료")
