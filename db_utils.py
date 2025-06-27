@@ -13,7 +13,6 @@ DBNAME    = os.getenv("MONGO_DBNAME", "test")
 
 ENCODED_PW = quote_plus(PASSWORD)
 
-# 4) MongoDB URI 조합
 URI = (
     f"mongodb+srv://{USER}:{ENCODED_PW}"
     f"@{CLUSTER}/?retryWrites=true"
@@ -21,15 +20,10 @@ URI = (
     "&appName=Ranking"
 )
 
-#몽고Client 생성(Server API 버전 1 사용)
-_client = MongoClient(URI,server_api = ServerApi("1"))
-#지정된 데이터베이스 인스턴스
+_client = MongoClient(URI, server_api=ServerApi("1"))
 _db = _client[DBNAME]
 
 def get_db():
-    """
-    MongoDB 데이터베이스 객체 반환
-    """
     return _db
 
 def ping():
@@ -40,19 +34,30 @@ def ping():
         print("❌ Ping 실패:", e)
         raise
 
-def insert_documents(docs: list, collection: str = "products") -> list:
+def insert_documents(
+    docs: list,
+    collection: str = "products",
+    replace_existing_keyword: bool = False
+) -> list:
     """
     Args:
-      docs: 저장할 문서(딕셔너리)의 리스트
-      collection: 컬렉션 이름 (기본: "products")
+      docs: 저장할 문서 리스트
+      collection: 컬렉션 이름
+      replace_existing_keyword: True 이면, 같은 keyword 문서 먼저 삭제
     Returns:
       삽입된 문서들의 ObjectId 리스트
     """
     if not docs:
         return []
+
     col = _db[collection]
+    if replace_existing_keyword:
+        keyword = docs[0].get("keyword")
+        if keyword:
+            col.delete_many({"keyword": keyword})
+
     result = col.insert_many(docs)
     return result.inserted_ids
 
-#모듈이 임호트 될 때 곧바로 ping() 실행
+# 모듈 import 시 ping 실행
 ping()
