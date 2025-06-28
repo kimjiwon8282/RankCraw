@@ -1,4 +1,4 @@
-import time
+import time 
 import logging
 from datetime import datetime
 from selenium import webdriver
@@ -29,18 +29,30 @@ def crawl(query: str = "쌈채소"):
     scroll_count = 0
     MAX_SCROLL = 4
     docs = []
+    prev_count = 0
 
     # 동적 스크롤: 최대 MAX_SCROLL회, 저장된 아이템 50개 될 때까지
     while saved_count < 50 and scroll_count < MAX_SCROLL:
         scroll_count += 1
         logger.info("스크롤 %d/%d", scroll_count, MAX_SCROLL)
-        driver.execute_script("window.scrollBy(0, window.innerHeight);")
+        # 첫 스크롤은 viewport 높이만큼, 이후에는 5배 스크롤
+        if scroll_count == 1:
+            driver.execute_script("window.scrollBy(0, window.innerHeight);")
+        else:
+            driver.execute_script("window.scrollBy(0, window.innerHeight * 5);")
         time.sleep(1)
 
         items = driver.find_elements(By.CSS_SELECTOR, "li.composite_card_container")
-        logger.info("로드된 총 요소: %d", len(items))
+        total_items = len(items)
+        logger.info("로드된 총 요소: %d", total_items)
 
-        for item in items:
+        # 새 상품이 없으면 종료
+        if total_items == prev_count:
+            logger.info("새로운 아이템이 없습니다. 크롤링 종료.")
+            break
+
+        # 이전에 처리한 부분 이후부터 순회
+        for item in items[prev_count:]:
             if saved_count >= 50:
                 break
             try:
@@ -51,8 +63,10 @@ def crawl(query: str = "쌈채소"):
                         ".basicProductCard_basic_product_card__TdrHT .productCardTitle_product_card_title__eQupA"
                     ).text.strip()
                 except NoSuchElementException:
+                    prev_count += 1
                     continue
                 if not name:
+                    prev_count += 1
                     continue
 
                 # 별점 추출
@@ -92,9 +106,11 @@ def crawl(query: str = "쌈채소"):
                     "review_count": review_count,
                     "crawled_at": datetime.utcnow()
                 })
+                prev_count += 1
 
             except StaleElementReferenceException:
                 logger.warning("StaleElementReferenceException 발생, 스킵")
+                prev_count += 1
                 continue
 
     driver.quit()
@@ -108,7 +124,6 @@ def crawl(query: str = "쌈채소"):
 
     # MongoDB에 일괄 저장
     if docs:
-        # replace_existing_keyword=True 로 기존 데이터 덮어쓰기
         ids = insert_documents(docs, collection="products", replace_existing_keyword=True)
         logger.info("MongoDB에 저장된 문서 수: %d", len(ids))
 
