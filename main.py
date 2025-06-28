@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def main():
     # Vegetable 카테고리 JSON 로드
-    cats = load_categories('categorySample.json')
+    cats = load_categories('categoryDataVegetable.json')
     queries = extract_queries(cats)
 
     logger.info("총 %d개의 키워드 준비 완료", len(queries))
